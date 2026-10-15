@@ -17,3 +17,6 @@ rag-autotune = "rag_autotune.cli:main"
 
 [tool.setuptools]
 packages = ["rag_autotune"]
+
+[tool.setuptools.package-data]
+rag_autotune = ["instructions.md"]

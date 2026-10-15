@@ -50,6 +50,7 @@ def main(argv=None) -> int:
     sub.add_parser("status", help="run log so far")
     sub.add_parser("failures", help="train questions the current best config misses")
     sub.add_parser("report", help="final summary for humans (shows holdout numbers)")
+    sub.add_parser("agents-md", help="print loop instructions for any agent: rag-autotune agents-md >> AGENTS.md")
 
     a = ap.parse_args(argv)
     proj = Project(Path(a.root))
@@ -80,6 +81,10 @@ def main(argv=None) -> int:
             print(f.read_text() if f.exists() else "[] (run an experiment first)")
         elif a.cmd == "report":
             print(json.dumps(proj.report(), indent=2))
+        elif a.cmd == "agents-md":
+            body = (Path(__file__).parent / "instructions.md").read_text(encoding="utf-8")
+            print("<!-- rag-autotune: instructions for coding agents (Pi, Codex, Claude Code, Cursor...) -->")
+            print(body.replace("# rag-autotune", "## rag-autotune: tuning loop", 1))
     except AutotuneError as e:
         print(f"error: {e}", file=sys.stderr)
         return 2

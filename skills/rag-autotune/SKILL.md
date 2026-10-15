@@ -22,7 +22,7 @@ Install if missing: `pip install git+https://github.com/Costas1992/rag-autotune`
 
 ## Phase 1: setup (do not skip)
 
-1. **Check the eval set exists and is real.** If the user has none, stop tuning and help them build one first (see `references/eval-set.md`). A loop on a bad eval set optimises the wrong thing very efficiently.
+1. **Check the eval set exists and is real.** If the user has none, stop tuning and help them build one first (see [eval-set.md](https://github.com/Costas1992/rag-autotune/blob/main/skills/rag-autotune/references/eval-set.md)). A loop on a bad eval set optimises the wrong thing very efficiently.
 2. **Check the adapter exposes the knobs.** Every tunable thing must be read from `config`. If a knob they care about is hard-coded, tell them; adapter changes are the human's job because the adapter is locked.
 3. **Init** (ask the user for k if unclear; default 5, use what their app actually passes to the LLM):
    ```
@@ -46,7 +46,7 @@ Repeat until a stop condition (below):
 
 Keep a short running log in the chat (one line per experiment) so the user can follow without opening files.
 
-See `references/playbook.md` for the hypotheses that usually pay off, in the order worth trying.
+See [playbook.md](https://github.com/Costas1992/rag-autotune/blob/main/skills/rag-autotune/references/playbook.md) for the hypotheses that usually pay off, in the order worth trying.
 
 ## Stop conditions
 

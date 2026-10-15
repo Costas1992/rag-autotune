@@ -22,7 +22,17 @@ No dependencies. Python 3.9+.
 pip install git+https://github.com/Costas1992/rag-autotune
 ```
 
-For the Claude skill, copy `skills/rag-autotune/` into `~/.claude/skills/` (Claude Code), or upload `rag-autotune.skill` in claude.ai.
+Then give your agent the loop instructions. Pick one:
+
+| Agent | How |
+|---|---|
+| **Pi** | `cp -r skills/rag-autotune ~/.pi/agent/skills/` (or `.pi/skills/` per project) |
+| **Claude Code** | `cp -r skills/rag-autotune ~/.claude/skills/` |
+| **Codex, Pi and others** using the shared folder | `cp -r skills/rag-autotune ~/.agents/skills/` |
+| **claude.ai** | upload `rag-autotune.skill` in Settings → Skills |
+| **Any agent that reads AGENTS.md** | in your project: `rag-autotune agents-md >> AGENTS.md` |
+
+The skill and `agents-md` contain the same instructions, and a test keeps them in sync.
 
 ## Try the demo (1 minute)
 
@@ -37,7 +47,7 @@ rag-autotune status
 rag-autotune report            # final summary, includes holdout numbers
 ```
 
-Or tell Claude: *"autotune the retrieval in examples/demo, budget 15 experiments"*.
+Or tell your agent: *"autotune the retrieval in examples/demo, budget 15 experiments"*.
 
 ## Plug in your own RAG
 

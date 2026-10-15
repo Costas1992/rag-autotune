@@ -96,5 +96,16 @@ class SplitTests(unittest.TestCase):
         self.assertEqual(len(a[1]), round(len(items) * 0.3))
 
 
+class InstructionSyncTests(unittest.TestCase):
+    def test_skill_body_matches_packaged_instructions(self):
+        # One source of truth: SKILL.md (Claude/Pi/Codex skill) and `rag-autotune agents-md`
+        # (AGENTS.md for any agent) must say the same thing.
+        root = Path(__file__).resolve().parent.parent
+        skill = (root / "skills" / "rag-autotune" / "SKILL.md").read_text()
+        body = skill.split("---", 2)[2].lstrip("\n")
+        packaged = (root / "rag_autotune" / "instructions.md").read_text()
+        self.assertEqual(body, packaged)
+
+
 if __name__ == "__main__":
     unittest.main()
