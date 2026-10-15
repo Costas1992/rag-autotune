@@ -107,5 +107,58 @@ class InstructionSyncTests(unittest.TestCase):
         self.assertEqual(body, packaged)
 
 
+class SetAndNoopTests(unittest.TestCase):
+    """Regression for a real Gemma-12B run: it wrote `run -m "stem=True"` ten times without
+    changing the config, and the harness scored the same config ten times."""
+
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp())
+        for f in ("adapter.py", "config.py", "corpus.jsonl", "evalset.jsonl"):
+            shutil.copy(DEMO / f, self.dir / f)
+        self.proj = Project(self.dir)
+        self.proj.init("evalset.jsonl", "adapter.py", "config.py", k=2, metric="recall",
+                       holdout_frac=0.3, min_delta=None, latency_budget_ms=None, seed="t", force=True)
+        self.proj.run("baseline")
+
+    def tearDown(self):
+        shutil.rmtree(self.dir)
+
+    def test_noop_run_is_refused_and_not_logged(self):
+        n = self.proj.next_exp()
+        with self.assertRaisesRegex(AutotuneError, "NOOP"):
+            self.proj.run("stem=True")
+        self.assertEqual(self.proj.next_exp(), n)
+
+    def test_set_applies_and_run_reports_change(self):
+        self.proj.set_values(["expand_synonyms=True"])
+        r = self.proj.run("synonyms")
+        self.assertIn("expand_synonyms: False -> True", r["changes"])
+        self.assertNotEqual(r.get("delta"), 0.0)
+
+    def test_set_keeps_comments_and_layout(self):
+        self.proj.set_values(["chunk_size=40"])
+        text = (self.dir / "config.py").read_text()
+        self.assertIn('"chunk_size": 40,          # words per chunk', text)
+
+    def test_set_unknown_key_suggests_spelling(self):
+        with self.assertRaisesRegex(AutotuneError, "did you mean 'chunk_size'"):
+            self.proj.set_values(["chunk_sise=40"])
+
+    def test_set_rejects_wrong_types(self):
+        for bad in ("stem=yes", "chunk_size=big", "chunk_size=4.5", "doc_aggregation=3"):
+            with self.assertRaises(AutotuneError, msg=bad):
+                self.proj.set_values([bad])
+        self.assertEqual((self.dir / "config.py").read_text(), (DEMO / "config.py").read_text())
+
+    def test_set_is_all_or_nothing(self):
+        with self.assertRaises(AutotuneError):
+            self.proj.set_values(["stem=True", "nope=1"])
+        self.assertEqual((self.dir / "config.py").read_text(), (DEMO / "config.py").read_text())
+
+    def test_bare_word_string(self):
+        changes = self.proj.set_values(["doc_aggregation=sum"])
+        self.assertEqual(changes, ["doc_aggregation: 'max' -> 'sum'"])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -10,6 +10,8 @@ from .core import AutotuneError, Project, FAILURES
 
 
 def _print_run(r: dict) -> None:
+    if r.get("changes"):
+        print("tested: " + "; ".join(r["changes"]))
     if r["decision"] == "CRASH":
         print(f"exp {r['exp']}: CRASH (config restored to last kept version)")
         print(r["error"])
@@ -42,10 +44,16 @@ def main(argv=None) -> int:
     i.add_argument("--seed", default="rag-autotune")
     i.add_argument("--force", action="store_true", help="wipe .autotune/ and start over")
 
-    r = sub.add_parser("run", help="score the current config, KEEP or DISCARD it")
-    r.add_argument("-m", "--hypothesis", required=True, help="one line: what you changed and why")
+    r = sub.add_parser("run", help="apply --set changes, score the config, KEEP or DISCARD it")
+    r.add_argument("-m", "--hypothesis", required=True,
+                   help="one line: why you expect this change to help (a label only, it changes nothing)")
+    r.add_argument("--set", dest="sets", nargs="+", metavar="KEY=VALUE", default=[],
+                   help="config changes to apply before scoring, e.g. --set chunk_size=40 chunk_overlap=10")
     r.add_argument("--simplify", action="store_true",
                    help="this change only removes complexity: keep it if the score does not drop")
+
+    st = sub.add_parser("set", help="change config values safely (validated keys and types)")
+    st.add_argument("pairs", nargs="+", metavar="KEY=VALUE")
 
     sub.add_parser("status", help="run log so far")
     sub.add_parser("failures", help="train questions the current best config misses")
@@ -64,7 +72,15 @@ def main(argv=None) -> int:
             for w in s["warnings"]:
                 print(f"WARNING: {w}")
             print("next: rag-autotune run -m 'baseline'")
+        elif a.cmd == "set":
+            proj.check_locks()
+            for c in proj.set_values(a.pairs) or ["no change (values already set)"]:
+                print(f"set {c}")
         elif a.cmd == "run":
+            if a.sets:
+                proj.check_locks()
+                for c in proj.set_values(a.sets):
+                    print(f"set {c}")
             res = proj.run(a.hypothesis, a.simplify)
             _print_run(res)
             return 1 if res["decision"] == "CRASH" else 0

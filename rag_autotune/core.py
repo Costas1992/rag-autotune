@@ -63,6 +63,53 @@ def load_module(path: Path, name: str):
     return mod
 
 
+def config_dict(path: Path) -> dict:
+    mod = load_module(path, "config")
+    cfg = getattr(mod, "CONFIG", None)
+    if not isinstance(cfg, dict):
+        raise AutotuneError(f"{path.name} must define a dict named CONFIG")
+    return dict(cfg)
+
+
+def config_changes(old: dict, new: dict) -> list[str]:
+    keys = sorted(set(old) | set(new))
+    return [f"{k}: {old.get(k, '<unset>')!r} -> {new.get(k, '<unset>')!r}"
+            for k in keys if old.get(k, object()) != new.get(k, object())]
+
+
+def parse_value(key: str, raw: str, current):
+    """Parse 'raw' from the command line and check it has the same type as the current value.
+
+    Strict on purpose: a weak agent writing chunk_size=big or stem=yes should get a clear
+    error, not a silently wrong experiment.
+    """
+    import ast
+    if isinstance(current, bool):
+        low = raw.strip().lower()
+        if low in ("true", "false"):
+            return low == "true"
+        raise AutotuneError(f"{key} is a bool: use True or False, not {raw!r}")
+    try:
+        val = ast.literal_eval(raw)
+    except (ValueError, SyntaxError):
+        val = raw  # bare word -> string, e.g. doc_aggregation=sum
+    if isinstance(current, (int, float)):
+        if isinstance(val, bool) or not isinstance(val, (int, float)):
+            raise AutotuneError(f"{key} is a number (currently {current!r}), got {raw!r}")
+        if isinstance(current, int) and isinstance(val, float):
+            if not val.is_integer():
+                raise AutotuneError(f"{key} is an integer (currently {current!r}), got {raw!r}")
+            val = int(val)
+        if isinstance(current, float):
+            val = float(val)
+        return val
+    if isinstance(current, str):
+        if not isinstance(val, str):
+            raise AutotuneError(f"{key} is text (currently {current!r}), got {raw!r}")
+        return val
+    return val  # lists, dicts, None: accept any Python literal
+
+
 def load_eval_set(path: Path) -> list[dict]:
     items, seen = [], set()
     for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
@@ -228,6 +275,48 @@ class Project:
         if b.exists():
             shutil.copyfile(b, self.path("config"))
 
+    # -- changing the config without hand-editing
+    def set_values(self, pairs: list[str]) -> list[str]:
+        """Apply key=value pairs to the config file. All-or-nothing; verified by reloading."""
+        import difflib
+        import re
+        path = self.path("config")
+        current = config_dict(path)
+        updates = {}
+        for pair in pairs:
+            if "=" not in pair:
+                raise AutotuneError(f"expected key=value, got {pair!r}")
+            key, raw = (x.strip() for x in pair.split("=", 1))
+            if key not in current:
+                hint = difflib.get_close_matches(key, list(current), n=1)
+                msg = f"unknown key {key!r}" + (f", did you mean {hint[0]!r}?" if hint else "")
+                raise AutotuneError(msg + f" Valid keys: {', '.join(sorted(current))}")
+            updates[key] = parse_value(key, raw, current[key])
+
+        original = path.read_text(encoding="utf-8")
+        text = original
+        for key, val in updates.items():
+            pat = re.compile(r'(["\']' + re.escape(key) + r'["\']\s*:\s*)([^,#\n}]+)')
+            text, n = pat.subn(lambda m: m.group(1) + repr(val), text, count=1)
+            if n == 0:  # unusual formatting: fall back to an explicit override line
+                text = text.rstrip("\n") + f"\nCONFIG[{key!r}] = {val!r}\n"
+        path.write_text(text, encoding="utf-8")
+        try:
+            after = config_dict(path)
+        except Exception as e:  # noqa: BLE001
+            path.write_text(original, encoding="utf-8")
+            raise AutotuneError(f"set produced an invalid config file, reverted: {e}") from e
+        if any(after.get(k) != v for k, v in updates.items()):
+            # Regex hit something unexpected (e.g. a value containing a comma). Use overrides.
+            text = original.rstrip("\n") + "\n" + "".join(
+                f"CONFIG[{k!r}] = {v!r}\n" for k, v in updates.items())
+            path.write_text(text, encoding="utf-8")
+            after = config_dict(path)
+            if any(after.get(k) != v for k, v in updates.items()):
+                path.write_text(original, encoding="utf-8")
+                raise AutotuneError("could not apply the change safely; config left unchanged")
+        return config_changes(current, after)
+
     # -- the experiment
     def run(self, hypothesis: str, simplify: bool = False) -> dict:
         s = self.settings
@@ -236,13 +325,24 @@ class Project:
         best = self.best()
         if best is None and exp > 0:
             raise AutotuneError("Run log exists but no baseline. Re-run init --force.")
+        changes = []
+        if best is not None:
+            try:
+                changes = config_changes(config_dict(self.p(BEST_CONFIG)), config_dict(self.path("config")))
+            except Exception:  # noqa: BLE001 - broken config: let the run below report a CRASH
+                changes = ["<config unreadable>"]
+            if not changes:
+                # A no-op run scores the same config again and burns an experiment for nothing.
+                raise AutotuneError(
+                    "NOOP: the config is identical to the last kept config, so this run would test "
+                    "nothing. The -m text is only a label; it does not change anything. Apply a "
+                    "change first, e.g.: rag-autotune run --set stem=True -m 'why'")
         items = load_eval_set(self.path("eval"))
         train, hold = split(items, s["holdout_frac"], s["seed"])
-        out = {"exp": exp, "hypothesis": hypothesis}
+        out = {"exp": exp, "hypothesis": hypothesis, "changes": changes}
         try:
             adapter = load_module(self.path("adapter"), "adapter")
-            cfg_mod = load_module(self.path("config"), "config")
-            config = dict(getattr(cfg_mod, "CONFIG"))
+            config = config_dict(self.path("config"))
             t0 = time.perf_counter()
             index = adapter.build_index(config)
             out["index_s"] = round(time.perf_counter() - t0, 2)

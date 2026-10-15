@@ -13,6 +13,7 @@ The loop is the easy part. The part that matters is making the score **hard to g
 | Auto-restore of the last kept config on DISCARD/CRASH | drifting from the best known state |
 | Optional latency budget on p95 | buying recall with an unusable retriever |
 | Config compiled from source on every run, no bytecode cache | stale results from fast same-size edits (a real bug found while building this) |
+| `--set key=value` with key and type checks, plus a NOOP refusal | agents "testing" a change they never applied (found in a real Gemma 12B run, below) |
 
 No dependencies. Python 3.9+.
 
@@ -21,6 +22,7 @@ No dependencies. Python 3.9+.
 ```bash
 pip install git+https://github.com/Costas1992/rag-autotune
 ```
+On a fresh Ubuntu/Debian you may need `sudo apt install python3-venv` first. If an agent can't find the command, link it somewhere every shell looks: `sudo ln -sf "$(which rag-autotune)" /usr/local/bin/`. Agent shells often don't read your `~/.zshrc`.
 
 Then give your agent the loop instructions. Pick one:
 
@@ -41,8 +43,7 @@ cd examples/demo
 rag-autotune init --eval evalset.jsonl --adapter adapter.py --config config.py --k 2
 rag-autotune run -m "baseline"
 rag-autotune failures          # what the current best config misses
-# edit config.py, e.g. "expand_synonyms": True
-rag-autotune run -m "synonym expansion: tracker->tag, money->refund"
+rag-autotune run --set expand_synonyms=True -m "synonym expansion: tracker->tag, money->refund"
 rag-autotune status
 rag-autotune report            # final summary, includes holdout numbers
 ```
@@ -79,7 +80,8 @@ Then `rag-autotune init ... --k 5` with the k your app actually uses.
 | Command | Does |
 |---|---|
 | `init --eval --adapter --config [--k 5] [--metric recall\|mrr\|hit] [--holdout 0.3] [--min-delta] [--latency-budget-ms]` | lock files, split train/holdout, start a run log |
-| `run -m "hypothesis" [--simplify]` | score, KEEP/DISCARD/CRASH. `--simplify` keeps a change that doesn't lower the score |
+| `run --set key=value ... -m "why" [--simplify]` | apply the change, score it, KEEP/DISCARD/CRASH. Refuses a no-op run. `--simplify` keeps a change that doesn't lower the score |
+| `set key=value ...` | change config values only (validated keys and types, comments kept) |
 | `failures` | train questions the best config misses |
 | `status` | run log |
 | `report` | baseline vs best, train **and** holdout |
@@ -99,7 +101,16 @@ Read the demo honestly:
 - **The synonym table leaks.** It was written by hand while looking at the eval questions, which is exactly what you must *not* do with a real system. The demo uses it to show the mechanics. In real use, expansion terms must come from somewhere independent of the eval set, such as query logs or a thesaurus.
 - **The holdout is small and easy here** (11 questions, baseline 0.91). Each question is about 9 points, so the gate catches big regressions only.
 
-## Limits (v0.1)
+## Field test: Gemma 4 12B on a 10GB GPU (Pi agent)
+
+The first run with a small local model found two failure modes that the Claude run didn't:
+
+1. **Pi's shell couldn't find `rag-autotune`** (PATH from `~/.zshrc` isn't loaded). The model then guessed misspelled command names and looped. Fix: the skill now checks the tool exists first and stops if it doesn't, and stops after the same command fails twice.
+2. **Ten no-op experiments.** The model wrote `run -m "stem=True"`, treating the label as the change. All 10 runs scored the unchanged baseline, and the log made it look like "nothing helps". Fix: `--set` makes the change part of the command, and `run` refuses when the config is identical to the last kept one.
+
+Lesson: design the agent's interface for the weakest model you support. A strong model works around a bad interface; a weak one shows you where it is.
+
+## Limits (v0.2)
 
 - The agent can still *read* `.autotune/holdout.jsonl` if it ignores the skill's instruction. The PASS/FAIL hiding is a soft guard. Run the harness outside the agent's filesystem for a hard one.
 - Retrieval only. Answer quality (faithfulness, correctness) needs an LLM judge, which is noisier and gameable. Planned for v2, behind the same gate.

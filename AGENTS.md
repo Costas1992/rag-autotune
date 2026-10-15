@@ -26,4 +26,5 @@ Instructions for coding agents (Pi, Codex, Claude Code, Cursor and others) worki
 5. **Python 3.9+.** Keep `from __future__ import annotations` in modules that use `X | None` hints.
 6. **Never load user code through the import cache.** `load_module` compiles from source on purpose: `__pycache__` keys on (mtime seconds, size) and caused stale experiment results. There's a regression test for it.
 7. After changing the demo, re-run the README demo commands and update the numbers in the README table.
-8. Don't commit `.autotune/` run state (it's gitignored).
+8. Design the agent-facing CLI for weak models: every error should name the fix (see `set_values` and the NOOP guard, both from a real Gemma 12B failure).
+9. Don't commit `.autotune/` run state (it's gitignored).

@@ -13,15 +13,14 @@ The whole method rests on one idea: **the score is only worth something if you c
 
 | File | Who edits it | What it is |
 |---|---|---|
-| `config.py` (name may differ, see `.autotune/settings.json`) | **you** | `CONFIG` dict of knobs. The only file you change. |
+| `config.py` (name may differ, see `.autotune/settings.json`) | **you, via `--set`** | `CONFIG` dict of knobs. The only thing you change. |
 | adapter (`adapter.py`) | human only, locked | `build_index(config)` and `retrieve(index, question, config) -> ranked ids` |
 | eval set (`*.jsonl`) | human only, locked | one line per question: `{"id", "question", "relevant_ids"}` |
 | `.autotune/` | the CLI | run log, best config, failures. **Do not read `holdout.jsonl`** - looking at holdout numbers turns the holdout into a second train set. |
 
-Install if missing: `pip install git+https://github.com/Costas1992/rag-autotune` (or `pip install -e .` inside the repo).
-
 ## Phase 1: setup (do not skip)
 
+0. **Check the tool exists:** run `rag-autotune --help`. If the shell says `command not found`, **stop** and tell the user to install it (`pip install git+https://github.com/Costas1992/rag-autotune`) and make sure it's on the PATH your shell uses. Do not guess other command names, spellings or paths; that never works and it wastes the run.
 1. **Check the eval set exists and is real.** If the user has none, stop tuning and help them build one first (see [eval-set.md](https://github.com/Costas1992/rag-autotune/blob/main/skills/rag-autotune/references/eval-set.md)). A loop on a bad eval set optimises the wrong thing very efficiently.
 2. **Check the adapter exposes the knobs.** Every tunable thing must be read from `config`. If a knob they care about is hard-coded, tell them; adapter changes are the human's job because the adapter is locked.
 3. **Init** (ask the user for k if unclear; default 5, use what their app actually passes to the LLM):
@@ -37,11 +36,17 @@ Repeat until a stop condition (below):
 
 1. **Look at failures:** `rag-autotune failures`. Group the misses by *why* they fail - vocabulary mismatch ("tracker" vs "tag"), answer split across chunks, a long doc drowning short ones, near-duplicate docs competing. A hypothesis that comes from a failure pattern beats a random sweep.
 2. **Write the hypothesis first**, one line: what you change, and which failures it should fix.
-3. **Change one thing** in the config. One change per run so the result is attributable. (Exception: two knobs that only make sense together, such as chunk_size and chunk_overlap.)
-4. **Run:** `rag-autotune run -m "<hypothesis>"`
+3. **Change one thing and run it, in one command:**
+   ```
+   rag-autotune run --set expand_synonyms=True -m "vocabulary mismatch: tracker vs tag"
+   ```
+   `--set` changes the config (keys and types are checked); `-m` is only a label for the log, it changes nothing. One change per run so the result is attributable. (Exception: knobs that only make sense together: `--set chunk_size=40 chunk_overlap=10`.) Use `--set` rather than editing `config.py` by hand; it can't leave a broken file. The output line `tested: ...` shows what was actually changed; check it matches your hypothesis.
+4. **Read the decision:**
    - `KEEP` - the change is now the baseline. Build on it.
    - `DISCARD` - the CLI already restored the config. Read the reason. A holdout-gate FAIL with a positive train delta means you overfit: do not retry close variants of the same change.
    - `CRASH` - the config broke the adapter. Read the error, fix, rerun.
+   - `error: NOOP` - you ran without changing anything. Add a `--set`. This doesn't count as an experiment.
+   - `error: unknown key` / type errors - read the suggestion in the message and use the exact key name it lists.
 5. **Simplify when you can.** If a knob looks like it isn't pulling its weight, revert it toward the default and run with `--simplify`: it is kept if the score doesn't drop. Fewer moving parts is a win on its own.
 
 Keep a short running log in the chat (one line per experiment) so the user can follow without opening files.
@@ -51,6 +56,7 @@ See [playbook.md](https://github.com/Costas1992/rag-autotune/blob/main/skills/ra
 ## Stop conditions
 
 Stop and report when any of these happens:
+- **the same command fails twice in a row.** Tell the user the exact command and error. Don't keep retrying variations: repeating a failed action is how runs get stuck;
 - the experiment budget the user gave is used up (default: 20 runs);
 - 6 DISCARDs in a row (you are on a plateau; more runs mostly fit noise);
 - train score is 1.0 (the eval set is too easy - say so, it needs harder questions);
@@ -69,7 +75,7 @@ Don't overclaim. A gain that only shows up on train is not a gain.
 
 ## Rules that protect the result
 
-- Never edit the eval set, the adapter or anything in `.autotune/`. The CLI refuses to run if you do, and the refusal is correct.
+- Change the config only with `--set` (or `rag-autotune set key=value`). Never edit the eval set, the adapter or anything in `.autotune/`. The CLI refuses to run if you do, and the refusal is correct.
 - Never re-run `init --force` to escape a bad run log. That's a human decision.
 - Don't tune k itself; k is a property of the user's app, not a free parameter.
 - If the user asks you to "just make the number go up", explain the gate instead of working around it.
