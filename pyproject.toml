@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rag-autotune"
+version = "0.1.0"
+description = "Autoresearch-style tuning loop for RAG retrieval: locked eval, holdout gate, keep-or-revert."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Konstantinos (Costas1992)" }]
+dependencies = []
+
+[project.scripts]
+rag-autotune = "rag_autotune.cli:main"
+
+[tool.setuptools]
+packages = ["rag_autotune"]

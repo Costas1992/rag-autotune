@@ -1,0 +1,36 @@
+{"id": "q01", "question": "How long does the battery last?", "relevant_ids": ["battery"]}
+{"id": "q02", "question": "what kind of coin cell does it take", "relevant_ids": ["battery"]}
+{"id": "q03", "question": "Does winter drain the battery faster?", "relevant_ids": ["battery"]}
+{"id": "q04", "question": "Do I need to pair the tag again after changing the battery?", "relevant_ids": ["battery"]}
+{"id": "q05", "question": "My tag light is green, what does that mean when connecting?", "relevant_ids": ["pairing"]}
+{"id": "q06", "question": "How do I reset the tag?", "relevant_ids": ["pairing"]}
+{"id": "q07", "question": "Can two people use the same tracker?", "relevant_ids": ["pairing"]}
+{"id": "q08", "question": "Can I go swimming with it?", "relevant_ids": ["waterproof"]}
+{"id": "q09", "question": "Is it safe at the beach in the sea?", "relevant_ids": ["waterproof", "shipping"]}
+{"id": "q10", "question": "How much does Pro cost per month?", "relevant_ids": ["pricing"]}
+{"id": "q11", "question": "Can I get my money back?", "relevant_ids": ["pricing", "shipping"]}
+{"id": "q12", "question": "What happens to my features if I cancel the subscription?", "relevant_ids": ["pricing"]}
+{"id": "q13", "question": "Is there a discount for companies buying many tags?", "relevant_ids": ["pricing"]}
+{"id": "q14", "question": "How do I get notified when my dog leaves the yard?", "relevant_ids": ["geofence"]}
+{"id": "q15", "question": "How many zones can I create?", "relevant_ids": ["geofence"]}
+{"id": "q16", "question": "Why did I miss an alert for a quick stop?", "relevant_ids": ["geofence"]}
+{"id": "q17", "question": "Where are my location points stored?", "relevant_ids": ["privacy"]}
+{"id": "q18", "question": "Do you sell my data?", "relevant_ids": ["privacy"]}
+{"id": "q19", "question": "How can I download all my history?", "relevant_ids": ["privacy"]}
+{"id": "q20", "question": "Can someone secretly track me with one of these?", "relevant_ids": ["privacy"]}
+{"id": "q21", "question": "I left my bag on the bus, what should I do?", "relevant_ids": ["lost-mode"]}
+{"id": "q22", "question": "Can the tag make noise so I can find my keys?", "relevant_ids": ["lost-mode"]}
+{"id": "q23", "question": "How can a stranger who finds my wallet reach me?", "relevant_ids": ["lost-mode"]}
+{"id": "q24", "question": "The app says my tracker is offline", "relevant_ids": ["troubleshoot"]}
+{"id": "q25", "question": "What does a flashing red light mean?", "relevant_ids": ["troubleshoot"]}
+{"id": "q26", "question": "How are software updates installed?", "relevant_ids": ["troubleshoot"]}
+{"id": "q27", "question": "How heavy is the device?", "relevant_ids": ["specs"]}
+{"id": "q28", "question": "How accurate is the position indoors?", "relevant_ids": ["specs"]}
+{"id": "q29", "question": "Does it work without my phone nearby?", "relevant_ids": ["specs"]}
+{"id": "q30", "question": "When will my order arrive if I live in Sweden?", "relevant_ids": ["shipping"]}
+{"id": "q31", "question": "Is a cracked case covered by the guarantee?", "relevant_ids": ["shipping"]}
+{"id": "q32", "question": "How long is location history kept on the free plan?", "relevant_ids": ["pricing", "privacy"]}
+{"id": "q33", "question": "What is the coldest temperature it works in?", "relevant_ids": ["specs", "battery"]}
+{"id": "q34", "question": "Does the tag stop working in the cold?", "relevant_ids": ["specs", "battery"]}
+{"id": "q35", "question": "How often does it send its location?", "relevant_ids": ["battery", "geofence"]}
+{"id": "q36", "question": "Which permissions does the app need?", "relevant_ids": ["pairing", "troubleshoot"]}
