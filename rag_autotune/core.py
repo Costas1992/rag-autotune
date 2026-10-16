@@ -30,6 +30,8 @@ HOLDOUT_LOG = "holdout.jsonl"      # humans only; the skill tells the agent not 
 FAILURES = "last_failures.json"
 BEST_CONFIG = "best_config.py"
 BEST_STATE = "best.json"
+INIT_CONFIG = "init_config.py"   # the config as it was at init; the baseline must use it
+PLATEAU = 6                       # consecutive non-KEEP runs before the CLI says stop
 
 RESULTS_HEADER = "exp\ttime\tdecision\ttrain_score\tdelta\tmrr\tholdout_gate\tp95_ms\thypothesis\n"
 
@@ -108,6 +110,17 @@ def parse_value(key: str, raw: str, current):
             raise AutotuneError(f"{key} is text (currently {current!r}), got {raw!r}")
         return val
     return val  # lists, dicts, None: accept any Python literal
+
+
+def git_dirty(root: Path, rel: str) -> bool | None:
+    """True if `rel` differs from git HEAD, False if clean, None if not in git / git missing."""
+    import subprocess
+    try:
+        r = subprocess.run(["git", "-C", str(root), "diff", "--quiet", "HEAD", "--", rel],
+                           capture_output=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return {0: False, 1: True}.get(r.returncode)
 
 
 def load_eval_set(path: Path) -> list[dict]:
@@ -240,6 +253,7 @@ class Project:
             "locked": locked, "n_train": len(train), "n_holdout": len(hold),
         }
         self.p(SETTINGS).write_text(json.dumps(settings, indent=2))
+        shutil.copyfile(self.root / config, self.p(INIT_CONFIG))
         self.p(RESULTS).write_text(RESULTS_HEADER)
         (self.state / ".gitignore").write_text("*\n")
         warnings = []
@@ -247,6 +261,9 @@ class Project:
             warnings.append(f"Only {len(items)} questions. Aim for 30+: below that one question moves the score by >3 points.")
         if len(hold) < 5:
             warnings.append(f"Holdout has {len(hold)} questions. The overfitting gate is weak below ~5.")
+        if git_dirty(self.root, config):
+            warnings.append(f"{config} has uncommitted changes versus git HEAD. The baseline will include "
+                            f"them untested. If an agent made them, `git checkout -- {config}` and init again.")
         settings["warnings"] = warnings
         return settings
 
@@ -326,6 +343,18 @@ class Project:
         if best is None and exp > 0:
             raise AutotuneError("Run log exists but no baseline. Re-run init --force.")
         changes = []
+        if best is None and self.p(INIT_CONFIG).exists():
+            # Regression for a Gemma 12B run: it set chunk_overlap=3 before the baseline, so that
+            # change was never tested and its effect vanished into the "baseline" score.
+            try:
+                drift = config_changes(config_dict(self.p(INIT_CONFIG)), config_dict(self.path("config")))
+            except Exception:  # noqa: BLE001
+                drift = []  # unreadable config: let the run below report a CRASH
+            if drift:
+                raise AutotuneError(
+                    "BASELINE: the baseline must use the config as it was at init, but it changed: "
+                    + "; ".join(drift) + ". Restore it with `rag-autotune reset-config`, run the baseline, "
+                    "then test the change as an experiment with --set.")
         if best is not None:
             try:
                 changes = config_changes(config_dict(self.p(BEST_CONFIG)), config_dict(self.path("config")))
@@ -390,7 +419,25 @@ class Project:
         else:
             self.restore_best()
         self._log(out, train_score, hold_score, gate)
+        out["streak"] = self.non_keep_streak()
         return out
+
+    def non_keep_streak(self) -> int:
+        n = 0
+        for h in reversed(self.history()):
+            if h["decision"] in ("KEEP", "BASELINE"):
+                break
+            n += 1
+        return n
+
+    def reset_config(self) -> list[str]:
+        """Put the config back to the last kept version (or the init snapshot before a baseline)."""
+        src = self.p(BEST_CONFIG) if self.p(BEST_CONFIG).exists() else self.p(INIT_CONFIG)
+        if not src.exists():
+            raise AutotuneError("Nothing to reset to. Run init first.")
+        changes = config_changes(config_dict(self.path("config")), config_dict(src))
+        shutil.copyfile(src, self.path("config"))
+        return changes
 
     def _log(self, out: dict, train, hold, gate):
         row = [str(out["exp"]), time.strftime("%Y-%m-%dT%H:%M:%S"), out["decision"],

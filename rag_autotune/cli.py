@@ -6,7 +6,7 @@ import json
 import sys
 from pathlib import Path
 
-from .core import AutotuneError, Project, FAILURES
+from .core import AutotuneError, Project, FAILURES, PLATEAU
 
 
 def _print_run(r: dict) -> None:
@@ -24,6 +24,9 @@ def _print_run(r: dict) -> None:
         print(f"  reason: {r['reason']}")
     if r["decision"] == "DISCARD":
         print("  config restored to last kept version")
+    if r.get("streak", 0) >= PLATEAU:
+        print(f"STOP: {r['streak']} runs in a row without a KEEP. You are on a plateau; more runs mostly "
+              f"fit noise. Stop here and run: rag-autotune report")
 
 
 def main(argv=None) -> int:
@@ -55,6 +58,8 @@ def main(argv=None) -> int:
     st = sub.add_parser("set", help="change config values safely (validated keys and types)")
     st.add_argument("pairs", nargs="+", metavar="KEY=VALUE")
 
+    sub.add_parser("reset-config", help="put the config back to the last kept version")
+
     sub.add_parser("status", help="run log so far")
     sub.add_parser("failures", help="train questions the current best config misses")
     sub.add_parser("report", help="final summary for humans (shows holdout numbers)")
@@ -84,6 +89,9 @@ def main(argv=None) -> int:
             res = proj.run(a.hypothesis, a.simplify)
             _print_run(res)
             return 1 if res["decision"] == "CRASH" else 0
+        elif a.cmd == "reset-config":
+            for ch in proj.reset_config() or ["already at the last kept version"]:
+                print(f"reset {ch}")
         elif a.cmd == "status":
             hist = proj.history()
             best = proj.best()

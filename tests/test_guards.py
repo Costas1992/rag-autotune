@@ -160,5 +160,44 @@ class SetAndNoopTests(unittest.TestCase):
         self.assertEqual(changes, ["doc_aggregation: 'max' -> 'sum'"])
 
 
+class BaselineAndPlateauTests(unittest.TestCase):
+    """Regressions from a Gemma 12B run on v0.2: it changed chunk_overlap before the baseline,
+    and kept going after 9 discards in a row."""
+
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp())
+        for f in ("adapter.py", "config.py", "corpus.jsonl", "evalset.jsonl"):
+            shutil.copy(DEMO / f, self.dir / f)
+        self.proj = Project(self.dir)
+        self.proj.init("evalset.jsonl", "adapter.py", "config.py", k=2, metric="recall",
+                       holdout_frac=0.3, min_delta=None, latency_budget_ms=None, seed="t", force=True)
+
+    def tearDown(self):
+        shutil.rmtree(self.dir)
+
+    def test_baseline_refused_if_config_changed_after_init(self):
+        self.proj.set_values(["chunk_overlap=3"])
+        with self.assertRaisesRegex(AutotuneError, "BASELINE.*chunk_overlap: 0 -> 3"):
+            self.proj.run("baseline")
+        self.assertEqual(self.proj.next_exp(), 0)
+
+    def test_reset_config_then_baseline_then_change_as_experiment(self):
+        self.proj.set_values(["chunk_overlap=3"])
+        self.assertEqual(self.proj.reset_config(), ["chunk_overlap: 3 -> 0"])
+        self.assertEqual(self.proj.run("baseline")["decision"], "BASELINE")
+        self.proj.set_values(["chunk_overlap=3"])
+        r = self.proj.run("overlap")
+        self.assertIn("chunk_overlap: 0 -> 3", r["changes"])
+
+    def test_streak_counts_runs_since_last_keep(self):
+        self.proj.run("baseline")
+        for v in (1.0, 1.3, 1.6):
+            self.proj.set_values([f"bm25_k1={v}"])
+            r = self.proj.run(f"k1 {v}")
+            if r["decision"] == "KEEP":
+                self.assertEqual(r["streak"], 0)
+        self.assertEqual(r["streak"], self.proj.non_keep_streak())
+
+
 if __name__ == "__main__":
     unittest.main()

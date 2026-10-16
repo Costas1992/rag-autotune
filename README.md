@@ -14,6 +14,8 @@ The loop is the easy part. The part that matters is making the score **hard to g
 | Optional latency budget on p95 | buying recall with an unusable retriever |
 | Config compiled from source on every run, no bytecode cache | stale results from fast same-size edits (a real bug found while building this) |
 | `--set key=value` with key and type checks, plus a NOOP refusal | agents "testing" a change they never applied (found in a real Gemma 12B run, below) |
+| Baseline must use the config as it was at `init`; git-dirty warning at init | an untested change hiding inside the baseline score (found in a Gemma 12B run) |
+| `STOP:` after 6 runs in a row without a KEEP | burning budget on a plateau, fitting noise |
 
 No dependencies. Python 3.9+.
 
@@ -82,6 +84,7 @@ Then `rag-autotune init ... --k 5` with the k your app actually uses.
 | `init --eval --adapter --config [--k 5] [--metric recall\|mrr\|hit] [--holdout 0.3] [--min-delta] [--latency-budget-ms]` | lock files, split train/holdout, start a run log |
 | `run --set key=value ... -m "why" [--simplify]` | apply the change, score it, KEEP/DISCARD/CRASH. Refuses a no-op run. `--simplify` keeps a change that doesn't lower the score |
 | `set key=value ...` | change config values only (validated keys and types, comments kept) |
+| `reset-config` | put the config back to the last kept version |
 | `failures` | train questions the best config misses |
 | `status` | run log |
 | `report` | baseline vs best, train **and** holdout |
@@ -110,7 +113,17 @@ The first run with a small local model found two failure modes that the Claude r
 
 Lesson: design the agent's interface for the weakest model you support. A strong model works around a bad interface; a weak one shows you where it is.
 
-## Limits (v0.2)
+### All Gemma runs so far (demo, recall@2, Ollama on an RX 6700 10GB, 32k context)
+
+| Run | Version | Prompt | Outcome |
+|---|---|---|---|
+| 1 | v0.1 | short | couldn't find the CLI, misspelled it, looped; then 10 no-op experiments |
+| 2 | v0.1 | step-by-step | 0.66 → 0.76 (synonym expansion), gate rejected one overfit |
+| 3 | v0.2 | short | 0.72 → 0.82 in 10 experiments, gate rejected 3; ~35 min, one output truncation. **But** it changed `chunk_overlap` before the baseline, so the "0.72 baseline" hid an untested +0.06. Fixed in v0.3. |
+
+Run 3 also ran 9 discards in a row, past the skill's plateau rule. Weak models skip rules in prose, so v0.3 prints the stop condition from the CLI itself.
+
+## Limits (v0.3)
 
 - The agent can still *read* `.autotune/holdout.jsonl` if it ignores the skill's instruction. The PASS/FAIL hiding is a soft guard. Run the harness outside the agent's filesystem for a hard one.
 - Retrieval only. Answer quality (faithfulness, correctness) needs an LLM judge, which is noisier and gameable. Planned for v2, behind the same gate.
