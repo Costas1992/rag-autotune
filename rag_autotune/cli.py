@@ -20,6 +20,8 @@ def _print_run(r: dict) -> None:
             f"delta={r['delta']:+.4f}  mrr={r['mrr']:.4f}  holdout_gate={r['holdout_gate']}  "
             f"p95={r['p95_ms']:.0f}ms  misses={r['n_train_misses']}")
     print(line)
+    for n in r.get("notes", []):
+        print(f"NOTE: {n}")
     if r.get("reason"):
         print(f"  reason: {r['reason']}")
     if r["decision"] == "DISCARD":
@@ -95,6 +97,9 @@ def main(argv=None) -> int:
         elif a.cmd == "status":
             hist = proj.history()
             best = proj.best()
+            s = proj.settings
+            print(f"project: {proj.root}   metric: {s['metric']}@{s['k']}   "
+                  f"train={s['n_train']} holdout={s['n_holdout']}   min_delta={s['min_delta']}")
             for h in hist:
                 print(f"{h['exp']:>3} {h['decision']:<8} train={h['train_score']:<7} {h['delta']:<8} "
                       f"gate={h['holdout_gate']:<4} {h['hypothesis']}")

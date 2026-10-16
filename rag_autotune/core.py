@@ -112,6 +112,17 @@ def parse_value(key: str, raw: str, current):
     return val  # lists, dicts, None: accept any Python literal
 
 
+def default_min_delta(metric: str, n_train: int) -> float:
+    """Smallest train gain worth keeping: one question's worth of the metric.
+
+    recall/hit: one question fully fixed = 1/n.
+    mrr: one question moving from rank 2 to rank 1 = 0.5/n. Using 1/n for MRR (as v0.3 did)
+    demanded two rank-ups and rejected a real gain in a rag-doc-qa run (+0.038, holdout intact).
+    """
+    per_question = 0.5 if metric == "mrr" else 1.0
+    return round(per_question / n_train, 4)
+
+
 def git_dirty(root: Path, rel: str) -> bool | None:
     """True if `rel` differs from git HEAD, False if clean, None if not in git / git missing."""
     import subprocess
@@ -240,8 +251,7 @@ class Project:
         items = load_eval_set(self.root / eval_path)
         train, hold = split(items, holdout_frac, seed)
         if min_delta is None:
-            # One question's worth of improvement: smaller deltas are noise on small sets.
-            min_delta = round(1 / len(train), 4)
+            min_delta = default_min_delta(metric, len(train))
         if self.state.exists():
             shutil.rmtree(self.state)
         self.state.mkdir()
@@ -394,6 +404,14 @@ class Project:
 
         if best is None:
             decision, gate, delta = "BASELINE", "PASS", 0.0
+            notes = []
+            if hold_score >= 1 - 1e-9:
+                notes.append("holdout is already perfect at baseline: the gate can still block changes "
+                             "that hurt unseen questions, but it can never confirm a gain. Add harder questions.")
+            if train_score >= 1 - 1e-9:
+                notes.append("train is already perfect: nothing to tune. The eval set is too easy.")
+            if notes:
+                out["notes"] = notes
         else:
             delta = train_score - best["train"]
             gate = "PASS" if hold_score >= best["holdout"] - 1e-9 else "FAIL"
@@ -404,7 +422,18 @@ class Project:
                 out["reason"] = f"p95 {tr.p95_ms:.0f}ms over budget {budget}ms"
             elif gate == "FAIL":
                 decision = "DISCARD"
-                out["reason"] = "holdout gate failed (train went up, unseen questions got worse = overfitting)" if delta > 0 else "holdout gate failed"
+                # Size of the drop in question-equivalents, shown only as a coarse bucket so the
+                # agent learns how bad it was without seeing holdout scores.
+                lost = (best["holdout"] - hold_score) * s["n_holdout"]
+                big = lost > 1.0 + 1e-9  # more than one question's worth (also for MRR: 1.0 = one question lost)
+                size = "large (more than one question)" if big else "small (about one question or less)"
+                if delta > 0 and big:
+                    why = "train went up but unseen questions got clearly worse: likely overfitting"
+                elif delta > 0:
+                    why = "train went up, unseen questions slipped slightly: overfitting or noise"
+                else:
+                    why = "unseen questions got worse"
+                out["reason"] = f"holdout gate failed, drop {size}: {why}"
             elif improved or simpler_and_equal:
                 decision = "KEEP"
             else:

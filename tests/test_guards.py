@@ -199,5 +199,55 @@ class BaselineAndPlateauTests(unittest.TestCase):
         self.assertEqual(r["streak"], self.proj.non_keep_streak())
 
 
+class V04Tests(unittest.TestCase):
+    """From a rag-doc-qa run (MRR@3, 22 train / 10 holdout): a +0.038 gain with an intact
+    holdout was rejected by a recall-sized min_delta, the gate message called every drop
+    "overfitting", and a perfect baseline holdout went unremarked."""
+
+    def test_min_delta_is_metric_aware(self):
+        from rag_autotune.core import default_min_delta
+        self.assertEqual(default_min_delta("recall", 22), round(1 / 22, 4))
+        self.assertEqual(default_min_delta("mrr", 22), round(0.5 / 22, 4))
+        self.assertLess(default_min_delta("mrr", 22), 0.0379)  # the rejected rag-doc-qa gain
+
+    def _proj(self, metric):
+        d = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, d)
+        for f in ("adapter.py", "config.py", "corpus.jsonl", "evalset.jsonl"):
+            shutil.copy(DEMO / f, d / f)
+        p = Project(d)
+        p.init("evalset.jsonl", "adapter.py", "config.py", k=2, metric=metric, holdout_frac=0.3,
+               min_delta=None, latency_budget_ms=None, seed="rag-autotune", force=True)
+        return p
+
+    def test_baseline_notes_saturated_holdout(self):
+        d = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, d)
+        for f in ("adapter.py", "config.py", "corpus.jsonl", "evalset.jsonl"):
+            shutil.copy(DEMO / f, d / f)
+        cfg = d / "config.py"  # demo holdout is 1.0 once synonyms are on
+        cfg.write_text(cfg.read_text().replace('"expand_synonyms": False', '"expand_synonyms": True'))
+        p = Project(d)
+        p.init("evalset.jsonl", "adapter.py", "config.py", k=2, metric="recall", holdout_frac=0.3,
+               min_delta=None, latency_budget_ms=None, seed="rag-autotune", force=True)
+        r = p.run("baseline")
+        self.assertTrue(any("can never confirm a gain" in n for n in r.get("notes", [])))
+
+    def test_gate_size_buckets_match_rag_doc_qa_run(self):
+        # holdout MRR over 10 questions: exp 6 lost 1.0 (borderline), exp 5 lost 1.5 (clear)
+        for best_h, new_h, expect in ((1.0, 0.9, "small"), (1.0, 0.85, "large")):
+            lost = (best_h - new_h) * 10
+            self.assertEqual("large" if lost > 1.0 + 1e-9 else "small", expect)
+
+    def test_gate_message_reports_size_not_just_overfitting(self):
+        p = self._proj("recall")
+        p.run("baseline")
+        p.set_values(["remove_stopwords=True"])  # known demo holdout drop
+        r = p.run("stopwords")
+        self.assertEqual(r["holdout_gate"], "FAIL")
+        self.assertRegex(r["reason"], "drop (small|large)")
+        self.assertNotIn("= overfitting", r["reason"])
+
+
 if __name__ == "__main__":
     unittest.main()

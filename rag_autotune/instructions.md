@@ -23,7 +23,7 @@ The whole method rests on one idea: **the score is only worth something if you c
    rag-autotune init --eval evalset.jsonl --adapter adapter.py --config config.py --k 5
    ```
    Pass on any WARNING lines to the user. Under ~30 questions the score is coarse.
-4. **Baseline:** `rag-autotune run -m "baseline"`. If it says `error: BASELINE`, the config was changed after init: run `rag-autotune reset-config`, then the baseline, then test that change with `--set`.
+4. **Baseline:** `rag-autotune run -m "baseline"`. Pass any `NOTE:` lines on to the user. A perfect holdout at baseline means the gate can block changes but never confirm a gain, so describe every later gain as train-only. If it says `error: BASELINE`, the config was changed after init: run `rag-autotune reset-config`, then the baseline, then test that change with `--set`.
 
 ## Phase 2: the loop
 
@@ -38,7 +38,7 @@ Repeat until a stop condition (below):
    `--set` changes the config (keys and types are checked); `-m` is only a label for the log, it changes nothing. One change per run so the result is attributable. (Exception: knobs that only make sense together: `--set chunk_size=40 chunk_overlap=10`.) Use `--set` rather than editing `config.py` by hand; it can't leave a broken file. The output line `tested: ...` shows what was actually changed; check it matches your hypothesis.
 4. **Read the decision:**
    - `KEEP` - the change is now the baseline. Build on it.
-   - `DISCARD` - the CLI already restored the config. Read the reason. A holdout-gate FAIL with a positive train delta means you overfit: do not retry close variants of the same change.
+   - `DISCARD` - the CLI already restored the config. Read the reason. A holdout-gate FAIL says whether the drop was `small` (about one question: overfitting or noise) or `large` (likely overfitting). After a large drop, don't retry close variants of the same change. Report a small drop as "unclear", not as overfitting.
    - `CRASH` - the config broke the adapter. Read the error, fix, rerun.
    - `error: NOOP` - you ran without changing anything. Add a `--set`. This doesn't count as an experiment.
    - `error: unknown key` / type errors - read the suggestion in the message and use the exact key name it lists.

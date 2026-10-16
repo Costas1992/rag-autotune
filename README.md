@@ -16,6 +16,7 @@ The loop is the easy part. The part that matters is making the score **hard to g
 | `--set key=value` with key and type checks, plus a NOOP refusal | agents "testing" a change they never applied (found in a real Gemma 12B run, below) |
 | Baseline must use the config as it was at `init`; git-dirty warning at init | an untested change hiding inside the baseline score (found in a Gemma 12B run) |
 | `STOP:` after 6 runs in a row without a KEEP | burning budget on a plateau, fitting noise |
+| Metric-aware `min_delta` (MRR: one rank-up) and a sized gate message (`small`/`large` drop) | rejecting real MRR gains; calling every one-question wobble "overfitting" (found on rag-doc-qa) |
 
 No dependencies. Python 3.9+.
 
@@ -123,7 +124,20 @@ Lesson: design the agent's interface for the weakest model you support. A strong
 
 Run 3 also ran 9 discards in a row, past the skill's plateau rule. Weak models skip rules in prose, so v0.3 prints the stop condition from the CLI itself.
 
-## Limits (v0.3)
+## Field test: a real RAG app (rag-doc-qa, Qwen 3.5 9B, v0.3)
+
+[rag-doc-qa](https://github.com/Costas1992/rag-doc-qa) adapter: production chunker, all-MiniLM-L6-v2, Chroma; 32 questions over an 8-section handbook; MRR@3 over sections.
+
+| exp | change | train | holdout | read honestly |
+|---|---|---|---|---|
+| 0 | baseline | 0.848 | 1.00 | holdout already perfect: the gate can't confirm gains |
+| 2 | chunk_size=300 | +0.038 | 1.00 | probably a real gain; v0.3 rejected it with a recall-sized `min_delta` |
+| 5 | all-mpnet-base-v2 | +0.030 | 0.85 | lost 1.5 questions of rank: likely overfitting |
+| 6 | chunk_overlap=50 | +0.038 | 0.90 | lost 1 question of rank: overfitting or noise |
+
+The agent concluded "baseline is already optimal". The honest reading: **this corpus (~9 chunks) is too small to decide**. v0.4 fixes the three tool problems the run exposed.
+
+## Limits (v0.4)
 
 - The agent can still *read* `.autotune/holdout.jsonl` if it ignores the skill's instruction. The PASS/FAIL hiding is a soft guard. Run the harness outside the agent's filesystem for a hard one.
 - Retrieval only. Answer quality (faithfulness, correctness) needs an LLM judge, which is noisier and gameable. Planned for v2, behind the same gate.
